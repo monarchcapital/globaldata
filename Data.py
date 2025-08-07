@@ -134,6 +134,16 @@ st.markdown("""
         padding-bottom: 5px;
         border-bottom: 2px solid #4a69bd;
     }
+    .heatmap-item {
+        padding: 8px;
+        border-radius: 10px;
+        text-align: center;
+        margin-bottom: 5px;
+        font-size: 0.75rem;
+        font-weight: bold;
+        color: white;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    }
     </style>
     <div class="main-header">Global Market Dashboard</div>
     <div class="subheader">Daily changes for key stocks, commodities, currencies, and yields</div>
@@ -160,10 +170,14 @@ def fetch_all_data(end_date):
                     
                     change = last_close - previous_close
                     percent_change = (change / previous_close) * 100
+
+                    # Fetch open, high, and low for the last two available trading days
+                    last_day_data = hist.iloc[-1]
+                    previous_day_data = hist.iloc[-2]
                     
                     dates = {
-                        'previous_close_date': close_prices.index[-2].strftime('%Y-%m-%d'),
-                        'last_close_date': close_prices.index[-1].strftime('%Y-%m-%d')
+                        'previous_close_date': previous_day_data.name.strftime('%Y-%m-%d'),
+                        'last_close_date': last_day_data.name.strftime('%Y-%m-%d')
                     }
                     
                     data_list.append({
@@ -171,6 +185,9 @@ def fetch_all_data(end_date):
                         'Category': category_name,
                         'Previous Close': previous_close,
                         'Last Close': last_close,
+                        'Open': last_day_data['Open'],
+                        'High': last_day_data['High'],
+                        'Low': last_day_data['Low'],
                         'Change ($)': change,
                         'Change (%)': percent_change,
                         **dates
@@ -181,6 +198,9 @@ def fetch_all_data(end_date):
                         'Category': category_name,
                         'Previous Close': np.nan,
                         'Last Close': np.nan,
+                        'Open': np.nan,
+                        'High': np.nan,
+                        'Low': np.nan,
                         'Change ($)': np.nan,
                         'Change (%)': np.nan,
                         'previous_close_date': 'N/A',
@@ -192,6 +212,9 @@ def fetch_all_data(end_date):
                     'Category': category_name,
                     'Previous Close': np.nan,
                     'Last Close': np.nan,
+                    'Open': np.nan,
+                    'High': np.nan,
+                    'Low': np.nan,
                     'Change ($)': np.nan,
                     'Change (%)': np.nan,
                     'previous_close_date': 'N/A',
@@ -232,13 +255,19 @@ def generate_styled_table(df, category, date):
         # Create a new DataFrame with the desired column headers for display
         display_df = df_display.drop(columns=['previous_close_date', 'last_close_date', 'Category']).rename(columns={
             'Previous Close': f'Previous Close ({previous_close_date})',
-            'Last Close': f'Last Close ({last_close_date})'
+            'Last Close': f'Last Close ({last_close_date})',
+            'Open': f'Open ({last_close_date})',
+            'High': f'High ({last_close_date})',
+            'Low': f'Low ({last_close_date})'
         })
         
         # Create a single format dictionary
         format_dict = {
             f'Previous Close ({previous_close_date})': close_format,
             f'Last Close ({last_close_date})': close_format,
+            f'Open ({last_close_date})': close_format,
+            f'High ({last_close_date})': close_format,
+            f'Low ({last_close_date})': close_format,
             'Change ($)': change_format,
             'Change (%)': "{:+.2f}%"
         }
@@ -251,29 +280,34 @@ def generate_styled_table(df, category, date):
     else:
         st.warning(f"No data available for {category}.")
 
-
-# Function to generate a heatmap-like grid for a given DataFrame and title
+# New function to generate a heatmap-like grid for a given DataFrame and title using st.columns
 def generate_heatmap_grid(df, title):
     """Generates a color-coded grid of market indicators for a given category."""
     st.markdown(f"<h4 style='text-align: center; color: #4a69bd;'>{title} Heatmap</h4>", unsafe_allow_html=True)
     if not df.empty:
         # Sort the DataFrame by Change (%) for a better-looking heatmap
         sorted_df = df.dropna(subset=["Change (%)"]).sort_values("Change (%)", ascending=False)
-
-        # Create a list of columns to hold the metrics
-        cols = st.columns(min(len(sorted_df), 4))
         
-        for i, (_, row) in enumerate(sorted_df.iterrows()):
-            with cols[i % 4]:
+        # Create a container for the entire heatmap of a category
+        with st.container(border=True):
+            cols = st.columns(8)
+            for i, (_, row) in enumerate(sorted_df.iterrows()):
                 pct = row["Change (%)"]
+                color = (
+                    f"rgba(0, 200, 0, {min(1, abs(pct)/3)})" if pct > 0 else
+                    f"rgba(200, 0, 0, {min(1, abs(pct)/3)})"
+                )
                 
-                # Determine the delta color based on the percentage change
-                delta_color = "inverse" if pct < 0 else "normal"
-                
-                # Format the value with a sign
-                formatted_value = f"{pct:+.2f}%"
-                
-                st.metric(label=row["Indicator"], value=formatted_value, delta_color=delta_color)
+                # Use st.markdown with inline CSS to create the colored box
+                cols[i % 8].markdown(
+                    f"""
+                    <div class='heatmap-item' style='background-color: {color};'>
+                        {row["Indicator"]}<br>{pct:+.2f}%
+                    </div>
+                    """, 
+                    unsafe_allow_html=True
+                )
+
 
 # Initialize session state for the view mode
 if 'view_mode' not in st.session_state:
