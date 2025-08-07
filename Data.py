@@ -37,6 +37,7 @@ SYMBOLS = {
         '^OMX': 'OMX Stockholm 30 (Sweden)',
     },
     'Currencies': {
+        'DX-Y.NYB': 'US Dollar Index (DXY)',
         'EURUSD=X': 'Euro/USD',
         'JPY=X': 'USD/JPY',
         'GBPUSD=X': 'British Pound/USD',
@@ -83,6 +84,9 @@ SYMBOLS = {
         '^BRB10Y': 'Brazil 10-Year Yield'
     }
 }
+
+# List of currency pairs that need their values inverted for a consistent USD/XXX format
+INVERTED_CURRENCIES = ['EURUSD=X', 'GBPUSD=X', 'AUDUSD=X', 'NZD=X', 'CHF=X']
 
 # Main Streamlit App Layout and Logic
 st.set_page_config(layout="wide", page_title="Global Market Dashboard")
@@ -173,13 +177,32 @@ def fetch_all_data(end_date):
                     last_close = close_prices.iloc[-1]
                     previous_close = close_prices.iloc[-2]
                     
+                    # Invert the values and name for currencies quoted as XXX/USD for correct interpretation
+                    if category_name == 'Currencies' and symbol in INVERTED_CURRENCIES:
+                        if last_close != 0 and previous_close != 0:
+                            last_close = 1 / last_close
+                            previous_close = 1 / previous_close
+                            # Update the name for display
+                            name_parts = name.split('/')
+                            if len(name_parts) == 2:
+                                name = f'USD/{name_parts[0]}'
+                            else:
+                                name = f'USD/{name}'
+
+                    # Calculate changes after potential inversion
                     change = last_close - previous_close
                     percent_change = (change / previous_close) * 100
-
+                    
                     # Fetch open, high, and low for the last two available trading days
                     last_day_data = hist.iloc[-1]
                     previous_day_data = hist.iloc[-2]
                     
+                    # Invert open, high, and low for display if applicable
+                    if category_name == 'Currencies' and symbol in INVERTED_CURRENCIES:
+                        if last_day_data['Open'] != 0: last_day_data['Open'] = 1 / last_day_data['Open']
+                        if last_day_data['High'] != 0: last_day_data['High'] = 1 / last_day_data['High']
+                        if last_day_data['Low'] != 0: last_day_data['Low'] = 1 / last_day_data['Low']
+
                     dates = {
                         'previous_close_date': previous_day_data.name.strftime('%Y-%m-%d'),
                         'last_close_date': last_day_data.name.strftime('%Y-%m-%d')
