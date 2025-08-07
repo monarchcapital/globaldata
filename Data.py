@@ -313,22 +313,18 @@ def generate_heatmap_grid(df, title):
                     unsafe_allow_html=True
                 )
 
-
-# Initialize session state for the view mode
+# Initialize session state for the view mode and dates
 if 'view_mode' not in st.session_state:
     st.session_state.view_mode = 'tables'
+    st.session_state.start_date = datetime.now().date() - timedelta(days=2)
+    st.session_state.end_date = datetime.now().date() - timedelta(days=1)
 
-# Set default dates to today and yesterday
-today = datetime.now().date()
-yesterday = today - timedelta(days=1)
-two_days_ago = today - timedelta(days=2)
-
-# Display the date pickers
+# Display the date pickers using values from session state
 col1, col2 = st.columns(2)
 with col1:
-    date_1 = st.date_input("Select Start Date", two_days_ago)
+    date_1 = st.date_input("Select Start Date", value=st.session_state.start_date)
 with col2:
-    date_2 = st.date_input("Select End Date", yesterday)
+    date_2 = st.date_input("Select End Date", value=st.session_state.end_date)
 
 # Fetch and display data for both dates
 with st.spinner(f'Fetching market data for {date_1.strftime("%Y-%m-%d")} and {date_2.strftime("%Y-%m-%d")}...'):
@@ -339,6 +335,9 @@ with st.spinner(f'Fetching market data for {date_1.strftime("%Y-%m-%d")} and {da
 col_buttons = st.columns([1,1,1,1])
 with col_buttons[0]:
     if st.button('Refresh Data', help="Click to fetch the latest data"):
+        # Update the dates in session state to the latest available trading days
+        st.session_state.end_date = datetime.now().date() - timedelta(days=1)
+        st.session_state.start_date = datetime.now().date() - timedelta(days=2)
         st.cache_data.clear()
         st.rerun()
 with col_buttons[2]:
