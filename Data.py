@@ -112,11 +112,16 @@ st.markdown("""
         background-color: #26292e;
         color: #f0f2f6;
     }
-    .stButton>button {
-        background-color: #4a69bd;
-        color: white;
+    .stButton > button {
+        background-color: #26292e;
+        color: #f0f2f6;
         font-weight: bold;
         border-radius: 8px;
+        border: 1px solid #4a69bd;
+    }
+    .stButton > button:hover {
+        background-color: #4a69bd;
+        color: white;
     }
     h2 {
         color: #f0f2f6;
