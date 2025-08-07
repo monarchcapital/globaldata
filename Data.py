@@ -239,7 +239,7 @@ def color_change(val):
 
 def generate_styled_table(df, category, date):
     """Generates a styled Streamlit dataframe table for a given category."""
-    st.markdown(f"<h4 style='text-align: center; color: #4a69bd;'>{category} for {date.strftime('%Y-%m-%d')}</h4>", unsafe_allow_html=True)
+    st.markdown(f"<h4 style='text-align: center; color: #4a69bd;'>{category} as of {date.strftime('%Y-%m-%d')}</h4>", unsafe_allow_html=True)
 
     if not df.empty and not df.isnull().all().all():
         df_display = df.dropna(subset=['Change (%)']).sort_values("Change (%)", ascending=False)
@@ -347,14 +347,14 @@ with col_buttons[3]:
 
 # Conditional rendering based on session state
 if st.session_state.view_mode == 'tables':
-    st.header(f"Detailed Market Performance for {date_2.strftime('%Y-%m-%d')}")
+    st.header(f"Market Performance: {date_1.strftime('%Y-%m-%d')} vs {date_2.strftime('%Y-%m-%d')}")
     for category in SYMBOLS.keys():
         df2 = market_data_dfs_2.get(category)
         if df2 is not None:
             generate_styled_table(df2, category, date_2)
             
 elif st.session_state.view_mode == 'heatmap':
-    st.header(f"Market Performance Heatmap for {date_2.strftime('%Y-%m-%d')}")
+    st.header(f"Market Performance Heatmap: {date_1.strftime('%Y-%m-%d')} vs {date_2.strftime('%Y-%m-%d')}")
     for category in SYMBOLS.keys():
         df2 = market_data_dfs_2.get(category)
         if df2 is not None:
