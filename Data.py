@@ -16,6 +16,7 @@ st.set_page_config(layout="wide", page_title="Market Comparison App")
 st.title("Market Performance Dashboard")
 
 # --- QH API Data Function ---
+# QH API Data function (no changes)
 def get_qh_api_data(instruments_list, interval='1M', count=10):
     """
     Fetches OHLC data from the QH API for a list of instruments.
@@ -77,7 +78,7 @@ def get_qh_api_data(instruments_list, interval='1M', count=10):
         return pd.DataFrame()
 
 
-# --- Yahoo Finance Data Configuration (from user's data.py file) ---
+# --- Yahoo Finance Data Configuration (no changes) ---
 
 SYMBOLS = {
     'Stock Indices': {
@@ -115,7 +116,7 @@ SYMBOLS = {
 }
 INVERTED_CURRENCIES = ['EURUSD=X', 'GBPUSD=X', 'AUDUSD=X', 'NZD=X', 'CHF=X']
 
-# --- Common Functions (Updated from data.py) ---
+# --- Common Functions (Updated for clarity and robustness) ---
 
 @st.cache_data(ttl=3600)
 def fetch_all_data(end_date):
@@ -127,15 +128,22 @@ def fetch_all_data(end_date):
         for symbol, name in category_symbols.items():
             try:
                 ticker = yf.Ticker(symbol)
+                # Fetch a generous window of data to ensure we get two valid trading days
                 hist = ticker.history(start=end_date - timedelta(days=10), end=end_date + timedelta(days=1))
                 
-                if not hist.empty and len(hist['Close'].dropna()) >= 2:
-                    close_prices = hist['Close'].dropna()
+                # Drop rows with NaN values in the 'Close' column to get only trading days
+                valid_data = hist.dropna(subset=['Close'])
+
+                # Ensure we have at least two valid data points to calculate change
+                if len(valid_data) >= 2:
+                    # Get the last and second to last valid trading day's data
+                    last_day_data = valid_data.iloc[-1]
+                    previous_day_data = valid_data.iloc[-2]
+
+                    last_close = last_day_data['Close']
+                    previous_close = previous_day_data['Close']
                     
-                    last_close = close_prices.iloc[-1]
-                    previous_close = close_prices.iloc[-2]
-                    
-                    # Invert the values and name for currencies quoted as XXX/USD for correct interpretation
+                    # Invert the values and name for currencies quoted as XXX/USD
                     if category_name == 'Currencies' and symbol in INVERTED_CURRENCIES:
                         if last_close != 0 and previous_close != 0:
                             last_close = 1 / last_close
@@ -149,19 +157,12 @@ def fetch_all_data(end_date):
                     change = last_close - previous_close
                     percent_change = (change / previous_close) * 100
                     
-                    last_day_data = hist.iloc[-1]
-                    previous_day_data = hist.iloc[-2]
-                    
+                    # Also invert other values for display
                     if category_name == 'Currencies' and symbol in INVERTED_CURRENCIES:
                         if last_day_data['Open'] != 0: last_day_data['Open'] = 1 / last_day_data['Open']
                         if last_day_data['High'] != 0: last_day_data['High'] = 1 / last_day_data['High']
                         if last_day_data['Low'] != 0: last_day_data['Low'] = 1 / last_day_data['Low']
 
-                    dates = {
-                        'previous_close_date': previous_day_data.name.strftime('%Y-%m-%d'),
-                        'last_close_date': last_day_data.name.strftime('%Y-%m-%d')
-                    }
-                    
                     data_list.append({
                         'Indicator': name,
                         'Category': category_name,
@@ -172,7 +173,8 @@ def fetch_all_data(end_date):
                         'Low': last_day_data['Low'],
                         'Change ($)': change,
                         'Change (%)': percent_change,
-                        **dates
+                        'previous_close_date': previous_day_data.name.strftime('%Y-%m-%d'),
+                        'last_close_date': last_day_data.name.strftime('%Y-%m-%d')
                     })
                 else:
                     data_list.append({
@@ -199,6 +201,7 @@ def fetch_all_data(end_date):
 
     return category_dataframes
 
+# The rest of the functions remain unchanged
 def color_change(val):
     """Applies a color to a value based on if it is positive or negative."""
     if isinstance(val, (int, float)):
@@ -350,6 +353,11 @@ def yahoo_finance_page():
         date_1 = st.date_input("Select Start Date", value=st.session_state.start_date)
     with col2:
         date_2 = st.date_input("Select End Date", value=st.session_state.end_date)
+    
+    # Check if the user's selected date is not a valid trading day and display a warning
+    last_available_trading_day = yf.download('^GSPC', period='5d').index[-1].date()
+    if date_2 > last_available_trading_day:
+        st.warning(f"The selected end date ({date_2.strftime('%Y-%m-%d')}) is not a market trading day. Data will be shown for the last available trading day: {last_available_trading_day.strftime('%Y-%m-%d')}")
 
     with st.spinner(f'Fetching market data for {date_1.strftime("%Y-%m-%d")} and {date_2.strftime("%Y-%m-%d")}...'):
         market_data_dfs_1 = fetch_all_data(date_1)
@@ -408,6 +416,7 @@ def quanthub_api_page():
 
 
 # --- Main App Logic (Multipage) ---
+# Main app logic (no changes)
 with st.sidebar:
     st.header("Navigation")
     page_selection = st.selectbox("Choose a Data Source:", ["Yahoo Finance", "QuantHub API"])
