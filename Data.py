@@ -124,7 +124,8 @@ def fetch_yfinance_data(symbols_dict, start, end):
     data = {}
     for category, symbols in symbols_dict.items():
         tickers = list(symbols.keys())
-        df = yf.download(tickers, start=start, end=end, progress=False)
+        # The yfinance download is exclusive of the end date, so we add a day to be inclusive.
+        df = yf.download(tickers, start=start, end=end + timedelta(days=1), progress=False)
         if not df.empty:
             df.columns = [
                 f"{col[0]}_{col[1]}" if isinstance(col, tuple) else col
@@ -138,15 +139,12 @@ def fetch_yfinance_data(symbols_dict, start, end):
 
 
 # Define a function to generate styled tables for displaying data
-def generate_styled_table(df, title, date_col, value_col):
-    st.subheader(title)
-    if value_col in df.columns:
-        styled_df = df.pivot_table(
-            index=df.index, columns=df.index, values=value_col
-        ).rename(columns={c: str(c) for c in df.index})
-        st.dataframe(styled_df, use_container_width=True)
+def generate_styled_table(df, title, date):
+    st.subheader(f"{title} - Data for {date.strftime('%Y-%m-%d')}")
+    if not df.empty:
+        st.dataframe(df, use_container_width=True)
     else:
-        st.write("Data not available for this category.")
+        st.write("Data not available for this category and date.")
 
 
 def calculate_and_display_changes(df_1, df_2, category):
@@ -213,8 +211,8 @@ with st.sidebar:
     st.session_state.start_date = st.date_input("Start Date", st.session_state.start_date)
     st.session_state.end_date = st.date_input("End Date", st.session_state.end_date)
     
-    if st.session_state.start_date >= st.session_state.end_date:
-        st.error("Error: End Date must be after Start Date.")
+    if st.session_state.start_date > st.session_state.end_date:
+        st.error("Error: End Date must be after or equal to Start Date.")
 
 
 col_buttons = st.columns([1, 1, 1, 1, 1])
@@ -244,11 +242,21 @@ with col_buttons[4]:
 if st.session_state.view_mode == 'tables':
     st.header(f"Market Performance: {date_1.strftime('%Y-%m-%d')} vs {date_2.strftime('%Y-%m-%d')}")
     market_data_dfs = fetch_yfinance_data(SYMBOLS, date_1, date_2)
+    
     for category in SYMBOLS.keys():
         df = market_data_dfs.get(category)
         if df is not None:
-            # Assuming you want to display the 'Close' price for a given date
-            generate_styled_table(df, f"{category} - Close Prices", 'date', 'Close')
+            # Check if we have data for the two specified dates
+            df_date1 = df[df.index == date_1]
+            df_date2 = df[df.index == date_2]
+
+            if not df_date1.empty and not df_date2.empty:
+                # Display tables for both dates
+                generate_styled_table(df_date1, category, date_1)
+                generate_styled_table(df_date2, category, date_2)
+            else:
+                st.subheader(f"{category} - Data not available for one or both dates.")
+
 
 elif st.session_state.view_mode == 'heatmap':
     st.header(f"Daily Percentage Change Heatmap")
