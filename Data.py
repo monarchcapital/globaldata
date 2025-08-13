@@ -403,7 +403,7 @@ def yahoo_finance_page():
             st.session_state.view_mode = 'tables'
             st.rerun()
     with col_buttons[3]:
-        if st.button("Show Heatmap", help="Display a heatmap grid of daily percentage changes"):\
+        if st.button("Show Heatmap", help="Display a heatmap grid of daily percentage changes"):
             st.session_state.view_mode = 'heatmap'
             st.rerun()
 
