@@ -76,8 +76,23 @@ def get_qh_api_data(instruments_list, interval='1M', count=10):
         st.error(f"Error fetching data from QH API: {e}")
         return pd.DataFrame()
 
-# --- Yahoo Finance Data Configuration (no changes) ---
+# The QH_TICKERS dictionary is needed for the second page.
+QH_TICKERS = {
+    "Bonds": ["TU", "YR", "FV", "TY", "TN", "ZB"],
+    "Futures": ["6E", "6J", "6B", "6S", "RF", "6C"],
+    "Index": ["ES", "YM", "DXY", "FXXP", "FTUK", "FDAX", "JNI", "FDXM", "FESX", "NQ", "DX"],
+    "Yields": [
+        "DE2YR", "DE3YR", "DE5YR", "DE10YR", "DE30YR",
+        "GB2YR", "GB3YR", "GB10YR",
+        "CA2YR", "CA3YR", "CA10YR",
+        "BR2YR", "BR5YR", "BR10YR",
+        "US2YR", "US3YR", "US5YR", "US7YR", "US10YR", "US30YR",
+        "JP2YR", "JP5YR", "JP10YR"
+    ]
+}
 
+
+# --- Yahoo Finance Data Configuration (no changes) ---
 SYMBOLS = {
     'Stock Indices': {
         '^GSPC': 'S&P 500', '^IXIC': 'NASDAQ Composite', '^FTSE': 'FTSE 100 (UK)',
@@ -117,8 +132,33 @@ INVERTED_CURRENCIES = ['EURUSD=X', 'GBPUSD=X', 'AUDUSD=X', 'NZD=X', 'CHF=X']
 # --- Common Functions ---
 
 @st.cache_data(ttl=3600)
-def fetch_all_data(end_date):
-    """Fetches market data for a given end date and returns a dictionary of DataFrames."""
+def fetch_last_two_trading_days():
+    """
+    Fetches the last two valid trading days from Yahoo Finance data.
+    """
+    try:
+        # Fetch data for a major index to find valid trading days
+        ticker = yf.Ticker('^GSPC') 
+        hist = ticker.history(period='5d') # Fetch last 5 days to be safe
+        
+        valid_data = hist.dropna(subset=['Close'])
+        if len(valid_data) >= 2:
+            last_day_date = valid_data.index[-1].date()
+            previous_day_date = valid_data.index[-2].date()
+            return previous_day_date, last_day_date
+        else:
+            return None, None
+    except Exception as e:
+        st.error(f"Error fetching trading dates: {e}")
+        return None, None
+
+
+@st.cache_data(ttl=3600)
+def fetch_all_data(date_1, date_2):
+    """
+    Fetches market data for two specific dates and returns a dictionary of DataFrames.
+    date_1 and date_2 MUST be valid trading dates.
+    """
     category_dataframes = {}
 
     for category_name, category_symbols in SYMBOLS.items():
@@ -126,22 +166,16 @@ def fetch_all_data(end_date):
         for symbol, name in category_symbols.items():
             try:
                 ticker = yf.Ticker(symbol)
-                # Fetch a generous window of data to ensure we get two valid trading days
-                hist = ticker.history(start=end_date - timedelta(days=10), end=end_date + timedelta(days=1))
+                hist = ticker.history(start=date_1 - timedelta(days=1), end=date_2 + timedelta(days=1))
                 
-                # Drop rows with NaN values in the 'Close' column to get only trading days
-                valid_data = hist.dropna(subset=['Close'])
+                # We need data for both date_1 and date_2 to calculate the change.
+                data_on_date_1 = hist.loc[str(date_1)] if str(date_1) in hist.index else None
+                data_on_date_2 = hist.loc[str(date_2)] if str(date_2) in hist.index else None
 
-                # Ensure we have at least two valid data points to calculate change
-                if len(valid_data) >= 2:
-                    # Get the last and second to last valid trading day's data
-                    last_day_data = valid_data.iloc[-1]
-                    previous_day_data = valid_data.iloc[-2]
-
-                    last_close = last_day_data['Close']
-                    previous_close = previous_day_data['Close']
+                if data_on_date_1 is not None and data_on_date_2 is not None:
+                    last_close = data_on_date_2['Close']
+                    previous_close = data_on_date_1['Close']
                     
-                    # Invert the values and name for currencies quoted as XXX/USD
                     if category_name == 'Currencies' and symbol in INVERTED_CURRENCIES:
                         if last_close != 0 and previous_close != 0:
                             last_close = 1 / last_close
@@ -155,24 +189,23 @@ def fetch_all_data(end_date):
                     change = last_close - previous_close
                     percent_change = (change / previous_close) * 100
                     
-                    # Also invert other values for display
                     if category_name == 'Currencies' and symbol in INVERTED_CURRENCIES:
-                        if last_day_data['Open'] != 0: last_day_data['Open'] = 1 / last_day_data['Open']
-                        if last_day_data['High'] != 0: last_day_data['High'] = 1 / last_day_data['High']
-                        if last_day_data['Low'] != 0: last_day_data['Low'] = 1 / last_day_data['Low']
+                        if data_on_date_2['Open'] != 0: data_on_date_2['Open'] = 1 / data_on_date_2['Open']
+                        if data_on_date_2['High'] != 0: data_on_date_2['High'] = 1 / data_on_date_2['High']
+                        if data_on_date_2['Low'] != 0: data_on_date_2['Low'] = 1 / data_on_date_2['Low']
 
                     data_list.append({
                         'Indicator': name,
                         'Category': category_name,
                         'Previous Close': previous_close,
                         'Last Close': last_close,
-                        'Open': last_day_data['Open'],
-                        'High': last_day_data['High'],
-                        'Low': last_day_data['Low'],
+                        'Open': data_on_date_2['Open'],
+                        'High': data_on_date_2['High'],
+                        'Low': data_on_date_2['Low'],
                         'Change ($)': change,
                         'Change (%)': percent_change,
-                        'previous_close_date': previous_day_data.name.strftime('%Y-%m-%d'),
-                        'last_close_date': last_day_data.name.strftime('%Y-%m-%d')
+                        'previous_close_date': date_1.strftime('%Y-%m-%d'),
+                        'last_close_date': date_2.strftime('%Y-%m-%d')
                     })
                 else:
                     data_list.append({
@@ -181,7 +214,8 @@ def fetch_all_data(end_date):
                         'Previous Close': np.nan, 'Last Close': np.nan,
                         'Open': np.nan, 'High': np.nan, 'Low': np.nan,
                         'Change ($)': np.nan, 'Change (%)': np.nan,
-                        'previous_close_date': 'N/A', 'last_close_date': 'N/A'
+                        'previous_close_date': date_1.strftime('%Y-%m-%d'),
+                        'last_close_date': date_2.strftime('%Y-%m-%d')
                     })
             except Exception as e:
                 data_list.append({
@@ -190,7 +224,8 @@ def fetch_all_data(end_date):
                     'Previous Close': np.nan, 'Last Close': np.nan,
                     'Open': np.nan, 'High': np.nan, 'Low': np.nan,
                     'Change ($)': np.nan, 'Change (%)': np.nan,
-                    'previous_close_date': 'N/A', 'last_close_date': 'N/A'
+                    'previous_close_date': date_1.strftime('%Y-%m-%d'),
+                    'last_close_date': date_2.strftime('%Y-%m-%d')
                 })
 
         if data_list:
@@ -198,6 +233,7 @@ def fetch_all_data(end_date):
             category_dataframes[category_name] = df
 
     return category_dataframes
+
 
 def color_change(val):
     """Applies a color to a value based on if it is positive or negative."""
@@ -208,14 +244,12 @@ def color_change(val):
             return 'color: red;'
     return 'color: black;'
 
-def generate_styled_table(df, category, last_close_date):
+def generate_styled_table(df, category, previous_close_date, last_close_date):
     """Generates a styled Streamlit dataframe table for a given category."""
     st.markdown(f"<h4 style='text-align: center; color: #4a69bd;'>{category} as of {last_close_date}</h4>", unsafe_allow_html=True)
 
     if not df.empty and not df.isnull().all().all():
         df_display = df.dropna(subset=['Change (%)']).sort_values("Change (%)", ascending=False)
-        
-        previous_close_date = df_display['previous_close_date'].iloc[0] if not df_display.empty else 'N/A'
         
         close_format = "${:,.4f}" if 'Currencies' in category else "${:,.2f}"
         change_format = "{:+.4f}" if 'Currencies' in category else "{:+.2f}"
@@ -270,7 +304,6 @@ def generate_heatmap_grid(df, title):
                 )
 
 # --- Page Functions ---
-
 def yahoo_finance_page():
     st.markdown("""
         <style>
@@ -339,20 +372,16 @@ def yahoo_finance_page():
         <div class="subheader">Daily changes for key stocks, commodities, currencies, and yields</div>
     """, unsafe_allow_html=True)
     
-    if 'view_mode' not in st.session_state:
-        st.session_state.view_mode = 'tables'
-        # Fetch initial dates based on the last two trading days
-        try:
-            sample_data = yf.download('^GSPC', period='5d').dropna(subset=['Close'])
-            if len(sample_data) >= 2:
-                st.session_state.end_date = sample_data.index[-1].date()
-                st.session_state.start_date = sample_data.index[-2].date()
-            else:
-                st.session_state.end_date = datetime.now().date() - timedelta(days=1)
-                st.session_state.start_date = datetime.now().date() - timedelta(days=2)
-        except Exception:
-            st.session_state.end_date = datetime.now().date() - timedelta(days=1)
+    # Check session state for initial dates
+    if 'end_date' not in st.session_state:
+        previous_day, last_day = fetch_last_two_trading_days()
+        if previous_day and last_day:
+            st.session_state.start_date = previous_day
+            st.session_state.end_date = last_day
+        else:
+            # Fallback to a hardcoded date range if fetching fails
             st.session_state.start_date = datetime.now().date() - timedelta(days=2)
+            st.session_state.end_date = datetime.now().date() - timedelta(days=1)
 
     col1, col2 = st.columns(2)
     with col1:
@@ -360,40 +389,40 @@ def yahoo_finance_page():
     with col2:
         date_2 = st.date_input("Select End Date", value=st.session_state.end_date)
     
-    with st.spinner(f'Fetching market data for {date_1.strftime("%Y-%m-%d")} and {date_2.strftime("%Y-%m-%d")}...'):
-        market_data_dfs_1 = fetch_all_data(date_1)
-        market_data_dfs_2 = fetch_all_data(date_2)
+    with st.spinner(f'Fetching market data...'):
+        market_data_dfs = fetch_all_data(date_1, date_2)
 
     col_buttons = st.columns([1,1,1,1])
     with col_buttons[0]:
         if st.button('Refresh Data', help="Click to fetch the latest data"):
             st.cache_data.clear()
-            st.session_state.start_date = datetime.now().date() - timedelta(days=2)
-            st.session_state.end_date = datetime.now().date() - timedelta(days=1)
+            st.session_state.clear()
             st.rerun()
     with col_buttons[2]:
         if st.button("Show Tables", help="Display the detailed tables"):
             st.session_state.view_mode = 'tables'
             st.rerun()
     with col_buttons[3]:
-        if st.button("Show Heatmap", help="Display a heatmap grid of daily percentage changes"):
+        if st.button("Show Heatmap", help="Display a heatmap grid of daily percentage changes"):\
             st.session_state.view_mode = 'heatmap'
             st.rerun()
+
+    if 'view_mode' not in st.session_state:
+        st.session_state.view_mode = 'tables'
 
     if st.session_state.view_mode == 'tables':
         st.header(f"Market Performance: {date_1.strftime('%Y-%m-%d')} vs {date_2.strftime('%Y-%m-%d')}")
         for category in SYMBOLS.keys():
-            df2 = market_data_dfs_2.get(category)
-            if df2 is not None and not df2.empty:
-                last_close_date = df2['last_close_date'].iloc[0]
-                generate_styled_table(df2, category, last_close_date)
+            df = market_data_dfs.get(category)
+            if df is not None:
+                generate_styled_table(df, category, date_1.strftime('%Y-%m-%d'), date_2.strftime('%Y-%m-%d'))
                 
     elif st.session_state.view_mode == 'heatmap':
         st.header(f"Market Performance Heatmap: {date_1.strftime('%Y-%m-%d')} vs {date_2.strftime('%Y-%m-%d')}")
         for category in SYMBOLS.keys():
-            df2 = market_data_dfs_2.get(category)
-            if df2 is not None:
-                generate_heatmap_grid(df2, category)
+            df = market_data_dfs.get(category)
+            if df is not None:
+                generate_heatmap_grid(df, category)
 
 
 def quanthub_api_page():
