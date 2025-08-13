@@ -26,8 +26,8 @@ def get_qh_api_data(instruments_list, interval='1M', count=10):
     Returns:
         pd.DataFrame: A DataFrame with the fetched data or an empty DataFrame on failure.
     """
-    # NOTE: You MUST replace 'your_access_token' with your actual authorization token.
-    # The provided snippet had a long token, but it's best to handle this securely.
+    # CRITICAL: You MUST replace 'your_access_token_here' with your actual authorization token.
+    # The API will return an error if this token is missing or invalid.
     api_token = "your_access_token_here"
     url = "https://qh-api.corp.hertshtengroup.com/api/v2/ohlc"
     
@@ -44,6 +44,13 @@ def get_qh_api_data(instruments_list, interval='1M', count=10):
     try:
         response = requests.get(url, headers=headers, params=params)
         response.raise_for_status()  # Raises an HTTPError for bad responses (4xx or 5xx)
+        
+        # Check if the response is JSON before trying to parse it.
+        if response.headers.get('Content-Type') != 'application/json':
+            st.error(f"Error fetching data from QH API: Expected JSON, but received a different content type.")
+            st.error(f"Raw API response: {response.text}")
+            return pd.DataFrame()
+
         data = response.json()
         
         # The API returns a dictionary where keys are instruments.
@@ -266,4 +273,3 @@ elif st.session_state.view_mode == 'heatmap':
 
 elif st.session_state.view_mode == 'qh_api':
     display_qh_api_data()
-
