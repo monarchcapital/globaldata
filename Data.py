@@ -16,7 +16,6 @@ st.set_page_config(layout="wide", page_title="Market Comparison App")
 st.title("Market Performance Dashboard")
 
 # --- QH API Data Function ---
-# QH API Data function (no changes)
 def get_qh_api_data(instruments_list, interval='1M', count=10):
     """
     Fetches OHLC data from the QH API for a list of instruments.
@@ -77,7 +76,6 @@ def get_qh_api_data(instruments_list, interval='1M', count=10):
         st.error(f"Error fetching data from QH API: {e}")
         return pd.DataFrame()
 
-
 # --- Yahoo Finance Data Configuration (no changes) ---
 
 SYMBOLS = {
@@ -116,7 +114,7 @@ SYMBOLS = {
 }
 INVERTED_CURRENCIES = ['EURUSD=X', 'GBPUSD=X', 'AUDUSD=X', 'NZD=X', 'CHF=X']
 
-# --- Common Functions (Updated for clarity and robustness) ---
+# --- Common Functions ---
 
 @st.cache_data(ttl=3600)
 def fetch_all_data(end_date):
@@ -201,7 +199,6 @@ def fetch_all_data(end_date):
 
     return category_dataframes
 
-# The rest of the functions remain unchanged
 def color_change(val):
     """Applies a color to a value based on if it is positive or negative."""
     if isinstance(val, (int, float)):
@@ -211,15 +208,14 @@ def color_change(val):
             return 'color: red;'
     return 'color: black;'
 
-def generate_styled_table(df, category, date):
+def generate_styled_table(df, category, last_close_date):
     """Generates a styled Streamlit dataframe table for a given category."""
-    st.markdown(f"<h4 style='text-align: center; color: #4a69bd;'>{category} as of {date.strftime('%Y-%m-%d')}</h4>", unsafe_allow_html=True)
+    st.markdown(f"<h4 style='text-align: center; color: #4a69bd;'>{category} as of {last_close_date}</h4>", unsafe_allow_html=True)
 
     if not df.empty and not df.isnull().all().all():
         df_display = df.dropna(subset=['Change (%)']).sort_values("Change (%)", ascending=False)
         
         previous_close_date = df_display['previous_close_date'].iloc[0] if not df_display.empty else 'N/A'
-        last_close_date = df_display['last_close_date'].iloc[0] if not df_display.empty else 'N/A'
         
         close_format = "${:,.4f}" if 'Currencies' in category else "${:,.2f}"
         change_format = "{:+.4f}" if 'Currencies' in category else "{:+.2f}"
@@ -345,8 +341,18 @@ def yahoo_finance_page():
     
     if 'view_mode' not in st.session_state:
         st.session_state.view_mode = 'tables'
-        st.session_state.start_date = datetime.now().date() - timedelta(days=2)
-        st.session_state.end_date = datetime.now().date() - timedelta(days=1)
+        # Fetch initial dates based on the last two trading days
+        try:
+            sample_data = yf.download('^GSPC', period='5d').dropna(subset=['Close'])
+            if len(sample_data) >= 2:
+                st.session_state.end_date = sample_data.index[-1].date()
+                st.session_state.start_date = sample_data.index[-2].date()
+            else:
+                st.session_state.end_date = datetime.now().date() - timedelta(days=1)
+                st.session_state.start_date = datetime.now().date() - timedelta(days=2)
+        except Exception:
+            st.session_state.end_date = datetime.now().date() - timedelta(days=1)
+            st.session_state.start_date = datetime.now().date() - timedelta(days=2)
 
     col1, col2 = st.columns(2)
     with col1:
@@ -354,11 +360,6 @@ def yahoo_finance_page():
     with col2:
         date_2 = st.date_input("Select End Date", value=st.session_state.end_date)
     
-    # Check if the user's selected date is not a valid trading day and display a warning
-    last_available_trading_day = yf.download('^GSPC', period='5d').index[-1].date()
-    if date_2 > last_available_trading_day:
-        st.warning(f"The selected end date ({date_2.strftime('%Y-%m-%d')}) is not a market trading day. Data will be shown for the last available trading day: {last_available_trading_day.strftime('%Y-%m-%d')}")
-
     with st.spinner(f'Fetching market data for {date_1.strftime("%Y-%m-%d")} and {date_2.strftime("%Y-%m-%d")}...'):
         market_data_dfs_1 = fetch_all_data(date_1)
         market_data_dfs_2 = fetch_all_data(date_2)
@@ -366,9 +367,9 @@ def yahoo_finance_page():
     col_buttons = st.columns([1,1,1,1])
     with col_buttons[0]:
         if st.button('Refresh Data', help="Click to fetch the latest data"):
-            st.session_state.end_date = datetime.now().date() - timedelta(days=1)
-            st.session_state.start_date = datetime.now().date() - timedelta(days=2)
             st.cache_data.clear()
+            st.session_state.start_date = datetime.now().date() - timedelta(days=2)
+            st.session_state.end_date = datetime.now().date() - timedelta(days=1)
             st.rerun()
     with col_buttons[2]:
         if st.button("Show Tables", help="Display the detailed tables"):
@@ -383,8 +384,9 @@ def yahoo_finance_page():
         st.header(f"Market Performance: {date_1.strftime('%Y-%m-%d')} vs {date_2.strftime('%Y-%m-%d')}")
         for category in SYMBOLS.keys():
             df2 = market_data_dfs_2.get(category)
-            if df2 is not None:
-                generate_styled_table(df2, category, date_2)
+            if df2 is not None and not df2.empty:
+                last_close_date = df2['last_close_date'].iloc[0]
+                generate_styled_table(df2, category, last_close_date)
                 
     elif st.session_state.view_mode == 'heatmap':
         st.header(f"Market Performance Heatmap: {date_1.strftime('%Y-%m-%d')} vs {date_2.strftime('%Y-%m-%d')}")
@@ -416,7 +418,6 @@ def quanthub_api_page():
 
 
 # --- Main App Logic (Multipage) ---
-# Main app logic (no changes)
 with st.sidebar:
     st.header("Navigation")
     page_selection = st.selectbox("Choose a Data Source:", ["Yahoo Finance", "QuantHub API"])
