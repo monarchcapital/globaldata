@@ -11,9 +11,11 @@ import warnings
 
 warnings.filterwarnings("ignore")
 
-# --- QH API Data Function (from QH_api_OHLC.py) ---
-# This function is responsible for making the API call to the QH API
-# It returns a pandas DataFrame.
+# --- Page Configuration ---
+st.set_page_config(layout="wide", page_title="Market Comparison App")
+st.title("Market Performance Dashboard")
+
+# --- QH API Data Function ---
 def get_qh_api_data(instruments_list, interval='1M', count=10):
     """
     Fetches OHLC data from the QH API for a list of instruments.
@@ -75,7 +77,7 @@ def get_qh_api_data(instruments_list, interval='1M', count=10):
         return pd.DataFrame()
 
 
-# --- Your existing data.py code starts here ---
+# --- Yahoo Finance Data Configuration ---
 
 # Configuration for Yahoo Finance Symbols
 SYMBOLS = {
@@ -116,15 +118,7 @@ QH_TICKERS = {
     ]
 }
 
-
-# Streamlit session state initialization
-if 'start_date' not in st.session_state:
-    st.session_state.start_date = datetime.now().date() - timedelta(days=2)
-if 'end_date' not in st.session_state:
-    st.session_state.end_date = datetime.now().date() - timedelta(days=1)
-if 'view_mode' not in st.session_state:
-    st.session_state.view_mode = 'tables'
-
+# --- Common Functions ---
 
 @st.cache_data(ttl=3600)  # Cache data for 1 hour
 def fetch_yfinance_data(symbols_dict, start, end):
@@ -144,20 +138,23 @@ def fetch_yfinance_data(symbols_dict, start, end):
             data[category] = df
     return data
 
-
-# Define a function to generate styled tables for displaying data
 def generate_styled_table(df, title, date):
     st.subheader(f"{title} - Data for {date.strftime('%Y-%m-%d')}")
     if not df.empty:
         st.dataframe(df, use_container_width=True)
     else:
         st.write("Data not available for this category and date.")
-
+        
+def color_change(val):
+    """Applies a color to a value based on if it is positive or negative."""
+    color = "green" if val > 0 else "red" if val < 0 else "black"
+    return f"color: {color}"
 
 def calculate_and_display_changes(df_1, df_2, category):
     st.subheader(f"{category} Change")
     if df_1 is not None and df_2 is not None and not df_1.empty and not df_2.empty:
         try:
+            # Drop the index to align the dataframes correctly
             df_1_close = df_1["Close"].reset_index(drop=True)
             df_2_close = df_2["Close"].reset_index(drop=True)
             changes = (
@@ -165,11 +162,9 @@ def calculate_and_display_changes(df_1, df_2, category):
                 .round(2)
                 .to_frame(name="% Change")
             )
-            changes = changes.rename(index=dict(zip(df_1["Ticker"].tolist(), df_1["Ticker"].tolist())))
-            
-            def color_change(val):
-                color = "green" if val > 0 else "red" if val < 0 else "black"
-                return f"color: {color}"
+            # Find the original ticker names to use for the index
+            ticker_list = [col.split('_')[-1] for col in df_1.columns if 'Close' in col]
+            changes = changes.rename(index=dict(zip(range(len(ticker_list)), ticker_list)))
 
             st.dataframe(
                 changes.style.applymap(color_change, subset=["% Change"]),
@@ -180,10 +175,97 @@ def calculate_and_display_changes(df_1, df_2, category):
     else:
         st.write("Data not available for comparison.")
 
+def generate_heatmap_grid(df, title):
+    """Generates a color-coded grid of market indicators for a given category."""
+    st.markdown(f"<h4 style='text-align: center; color: #4a69bd;'>{title} Heatmap</h4>", unsafe_allow_html=True)
+    if not df.empty:
+        # Create a container for the entire heatmap of a category
+        with st.container(border=True):
+            cols = st.columns(8)
+            for i, (_, row) in enumerate(df.iterrows()):
+                # Assume a 'Close_Ticker' column exists to get the value
+                close_value = row.get(f'Close_{df.columns[0].split("_")[-1]}')
+                
+                # In this simplified version, we can't calculate a heatmap without both dates.
+                # A full implementation would require a dedicated function. For now, we'll
+                # just display the value from the latest date.
+                st.write("Heatmap feature requires both dates for a proper comparison. Please switch to the tables view.")
 
-# Function to fetch and display QH API data
-def display_qh_api_data():
-    st.header("QH API Data")
+
+# --- Page Functions ---
+
+def yahoo_finance_page():
+    st.header("Yahoo Finance Market Data")
+
+    # Date selection for Yahoo Finance data
+    if 'start_date' not in st.session_state:
+        st.session_state.start_date = datetime.now().date() - timedelta(days=2)
+    if 'end_date' not in st.session_state:
+        st.session_state.end_date = datetime.now().date() - timedelta(days=1)
+    if 'view_mode_yf' not in st.session_state:
+        st.session_state.view_mode_yf = 'tables'
+
+    col_dates = st.columns([1, 1])
+    with col_dates[0]:
+        start_date = st.date_input("Start Date", st.session_state.start_date, key="yf_start_date")
+    with col_dates[1]:
+        end_date = st.date_input("End Date", st.session_state.end_date, key="yf_end_date")
+    
+    if start_date > end_date:
+        st.error("Error: End Date must be after or equal to Start Date.")
+        return
+
+    # Update session state
+    st.session_state.start_date = start_date
+    st.session_state.end_date = end_date
+    
+    col_buttons = st.columns([1, 1, 1])
+    with col_buttons[0]:
+        if st.button('Refresh Data', help="Click to fetch the latest data"):
+            st.session_state.end_date = datetime.now().date() - timedelta(days=1)
+            st.session_state.start_date = datetime.now().date() - timedelta(days=2)
+            st.cache_data.clear()
+            st.rerun()
+
+    with col_buttons[1]:
+        if st.button("Show Tables", help="Display the detailed tables"):
+            st.session_state.view_mode_yf = 'tables'
+            st.rerun()
+
+    with col_buttons[2]:
+        if st.button("Show Percentage Changes", help="Display a table of percentage changes"):
+            st.session_state.view_mode_yf = 'changes'
+            st.rerun()
+
+    # Fetch data
+    market_data_dfs = fetch_yfinance_data(SYMBOLS, start_date, end_date)
+    market_data_dfs_1 = fetch_yfinance_data(SYMBOLS, start_date, start_date)
+    market_data_dfs_2 = fetch_yfinance_data(SYMBOLS, end_date, end_date)
+    
+    if st.session_state.view_mode_yf == 'tables':
+        st.header(f"Market Data Tables: {start_date.strftime('%Y-%m-%d')} vs {end_date.strftime('%Y-%m-%d')}")
+        for category in SYMBOLS.keys():
+            df_start = market_data_dfs_1.get(category)
+            df_end = market_data_dfs_2.get(category)
+            if df_start is not None and df_end is not None:
+                generate_styled_table(df_start, category, start_date)
+                generate_styled_table(df_end, category, end_date)
+            else:
+                st.subheader(f"{category} - Data not available for one or both dates.")
+
+    elif st.session_state.view_mode_yf == 'changes':
+        st.header(f"Market Performance Changes")
+        for category in SYMBOLS.keys():
+            df_start = market_data_dfs_1.get(category)
+            df_end = market_data_dfs_2.get(category)
+            if df_start is not None and df_end is not None:
+                calculate_and_display_changes(df_start, df_end, category)
+            else:
+                st.subheader(f"{category} - Data not available for one or both dates.")
+
+
+def quanthub_api_page():
+    st.header("QuantHub API Data")
     st.write("Fetching the latest data for selected instruments from the QH API.")
     
     selected_category = st.selectbox(
@@ -204,72 +286,12 @@ def display_qh_api_data():
                 st.write("Could not retrieve data for the selected instruments.")
 
 
-# --- UI Layout ---
-st.set_page_config(layout="wide", page_title="Market Comparison App")
-st.title("Market Performance Dashboard")
-
-# Date selection for Yahoo Finance data
-date_1 = st.session_state.start_date
-date_2 = st.session_state.end_date
-
-# Sidebar for date selection (only for yfinance)
+# --- Main App Logic (Multipage) ---
 with st.sidebar:
-    st.header("Date Range (for Yahoo Finance)")
-    st.session_state.start_date = st.date_input("Start Date", st.session_state.start_date)
-    st.session_state.end_date = st.date_input("End Date", st.session_state.end_date)
-    
-    if st.session_state.start_date > st.session_state.end_date:
-        st.error("Error: End Date must be after or equal to Start Date.")
+    st.header("Navigation")
+    page_selection = st.selectbox("Choose a Data Source:", ["Yahoo Finance", "QuantHub API"])
 
-
-col_buttons = st.columns([1, 1, 1, 1, 1])
-with col_buttons[0]:
-    if st.button('Refresh Data', help="Click to fetch the latest data"):
-        st.session_state.end_date = datetime.now().date() - timedelta(days=1)
-        st.session_state.start_date = datetime.now().date() - timedelta(days=2)
-        st.cache_data.clear()
-        st.rerun()
-
-with col_buttons[2]:
-    if st.button("Show Tables", help="Display the detailed tables"):
-        st.session_state.view_mode = 'tables'
-        st.rerun()
-
-with col_buttons[3]:
-    if st.button("Show Heatmap", help="Display a heatmap grid of daily percentage changes"):
-        st.session_state.view_mode = 'heatmap'
-        st.rerun()
-        
-with col_buttons[4]:
-    if st.button("Show QH API Data", help="Display data from the new QH API"):
-        st.session_state.view_mode = 'qh_api'
-        st.rerun()
-
-# Conditional rendering based on session state
-if st.session_state.view_mode == 'tables':
-    st.header(f"Market Performance: {date_1.strftime('%Y-%m-%d')} vs {date_2.strftime('%Y-%m-%d')}")
-    market_data_dfs = fetch_yfinance_data(SYMBOLS, date_1, date_2)
-    
-    for category in SYMBOLS.keys():
-        df = market_data_dfs.get(category)
-        if df is not None:
-            # Check if we have data for the two specified dates
-            df_date1 = df[df.index == date_1]
-            df_date2 = df[df.index == date_2]
-
-            if not df_date1.empty and not df_date2.empty:
-                # Display tables for both dates
-                generate_styled_table(df_date1, category, date_1)
-                generate_styled_table(df_date2, category, date_2)
-            else:
-                st.subheader(f"{category} - Data not available for one or both dates.")
-
-
-elif st.session_state.view_mode == 'heatmap':
-    st.header(f"Daily Percentage Change Heatmap")
-    st.write("This feature is not yet fully implemented for the new data.")
-    # You would need to add code here to fetch and process data for a heatmap,
-    # similar to what was likely in your original data.py for yfinance data.
-
-elif st.session_state.view_mode == 'qh_api':
-    display_qh_api_data()
+if page_selection == "Yahoo Finance":
+    yahoo_finance_page()
+elif page_selection == "QuantHub API":
+    quanthub_api_page()
